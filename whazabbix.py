@@ -6,8 +6,9 @@ import logging
 from dotenv import load_dotenv
 import os
 import socket
+import configparser
 
-###################################################################
+#######################################################################
 
 def animacion_carga():
     from rich.console import Console
@@ -50,6 +51,13 @@ animacion_carga()
 
 ###############################################
 # Cargar variables de entorno desde .env
+config = configparser.ConfigParser()
+config.read("whazabbix.conf")
+
+ZABBIX_URL = config.get("ZABBIX", "URL")
+# ... otras variables
+
+print(ZABBIX_URL)
 load_dotenv()
 
 # Acceder a los valores de configuración
