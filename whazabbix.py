@@ -3,8 +3,6 @@ import datetime
 import time
 import requests
 import logging
-from dotenv import load_dotenv
-import os
 import socket
 import configparser
 
@@ -54,20 +52,19 @@ animacion_carga()
 config = configparser.ConfigParser()
 config.read("whazabbix.conf")
 
-ZABBIX_URL = config.get("ZABBIX", "URL")
-# ... otras variables
-
-print(ZABBIX_URL)
-load_dotenv()
 
 # Acceder a los valores de configuración
-LOG_FILE = os.getenv("LOG_FILE")
-ZABBIX_URL = os.getenv("ZABBIX_URL_PRD")
-ZABBIX_API_TOKEN = os.getenv("ZABBIX_PRD_API_TOKEN")
-NOTIFICATION_URL = os.getenv("NOTIFICATION_URL")
-ADMIN_NUMBERS = os.getenv("ADMIN_NUMBER")
-NOTIFICATION_NUMBERS = os.getenv("NOTIFICATION_NUMBERS")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL"))
+LOG_FILE = config.get("DEFAULT","LOG_FILE")
+CHECK_INTERVAL = int(config.get("DEFAULT","CHECK_INTERVAL"))
+
+ZABBIX_URL = config.get("ZABBIX", "URL")
+ZABBIX_API_TOKEN = config.get("ZABBIX","API_TOKEN")
+
+NOTIFICATION_URL = config.get("WEBWHATSAPP","URL")
+
+ADMIN_NUMBERS = config.get("NOTIFICATIONS","ADMIN_NUMBER")
+NOTIFICATION_NUMBERS = config.get("NOTIFICATIONS","NOTIFICATION_NUMBERS")
+
 
 MENSAJE_SOLUCION = "✅ Se resuelve alerta\n"
 MENSAJE_ALERTA = "⚠️ Se detecta alerta, ya en revisión\n"
@@ -101,10 +98,22 @@ def send_notification(message, number):
     except requests.RequestException as e:
         logging.error(f"Error al enviar notificación a {number}: {e}")
 
+
+# Abre un socket UDP (no es necesario enviar datos)
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    # Conecta el socket a un servidor externo (no se envían datos)
+    s.connect(("8.8.8.8", 80))
+    # Obtén la IP de la interfaz de red
+    ip_address = s.getsockname()[0]
+finally:
+    s.close()
+
+
 # crear un informe de conexion
 # Se ha iniciado una sesion desde la IP
-message = "Se ha iniciado correctamente una sesion desde la IP: " + socket.gethostbyname(socket.gethostname())
-message = message + "\nFecha: " + str(datetime.datetime.now())
+message = "WhaZabbix Service is already initialized.\nIP: " + ip_address
+message = message + "\nDate: " + str(datetime.datetime.now())
 
 # Enviar una notificación inicial
 send_notification(message=message, number=ADMIN_NUMBERS)
@@ -129,11 +138,14 @@ def verificar_resueltos(time_from, time_till):
             else:
                 host_names = ['Unknown']
             host_names = ', '.join(host_names)
+
+            timestamp = datetime.datetime.fromtimestamp(int(event["clock"]))
+            timestamp = timestamp - datetime.timedelta(hours=6)
             
             message = (
                 f"{MENSAJE_SOLUCION}Problema: {event['name']}\n"
                 f"Hosts: {host_names}\n"
-                f"Fecha: {datetime.datetime.fromtimestamp(int(event['clock']))}\n"
+                f"Fecha: {timestamp}\n"
             )
             logging.info(message)
             send_notification(message, NOTIFICATION_NUMBERS)
@@ -153,6 +165,9 @@ def verificar_problemas(time_from, time_till):
     
     for problem in problems:
         timestamp = datetime.datetime.fromtimestamp(int(problem["clock"]))
+
+        # hacer modificacion a tiempo america ciudad de mexico (6 horas de diferencia)
+        timestamp = timestamp - datetime.timedelta(hours=6)
         
 
         # Obtener el host relacionado con el problema
@@ -179,19 +194,13 @@ def main():
     verificar_resueltos(time_from, time_till)
     verificar_problemas(time_from, time_till)
 
-    logging.info(f"Esperando {CHECK_INTERVAL} segundos antes de la siguiente verificación.")
+    logging.info(f"Esperando {CHECK_INTERVAL} segundos antes de la siguiente check.")
     time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
     while True:
         try:
-            delta1 = datetime.datetime.now()
             main()
-            delta2 = datetime.datetime.now()
-            elapsed_time = (delta2 - delta1).total_seconds()
-            sleep_time = max(CHECK_INTERVAL - elapsed_time, 0)
-            logging.info(f"Esperando {sleep_time} segundos antes de la siguiente verificación.")
-            time.sleep(sleep_time)
             
         except Exception as e:
             logging.error(f"Error inesperado: {e}")
